@@ -7,6 +7,8 @@
             [noir-blog.models.user :as users]
             [noir.validation :as vali]
             [noir.session :as session])
+  (:use somnium.congomongo)
+  (:use [somnium.congomongo.config :only [*mongo-config*]])
   (:import com.petebevin.markdown.MarkdownProcessor))
 
 (def posts-per-page 10)
@@ -16,27 +18,50 @@
 
 ;; Gets
 
+(defn total-mongo []
+  (fetch-count :posts))
+
 (defn total []
   (count (db/get :post-ids)))
+
+(defn id->post-mongo [id]
+  (fetch-one :posts
+             :where {:_id id}))
 
 (defn id->post [id]
   (db/get-in :posts [id]))
 
+(defn ids->posts-mongo [ids]
+  (map id->post-mongo ids))
+
 (defn ids->posts [ids]
   (map id->post ids))
 
+(defn moniker->post-mongo [moniker]
+  (id->post (fetch-one :posts :where {:moniker moniker})))
+
 (defn moniker->post [moniker]
   (id->post (db/get-in :post-monikers [moniker])))
+
+(defn get-page-mongo [page]
+  (let [page-num (dec (Integer. page)) ;; make it 1-based indexing
+        prev (* page-num posts-per-page)]
+    (ids->posts-mongo (take posts-per-page (drop prev (fetch :posts))))))
 
 (defn get-page [page]
   (let [page-num (dec (Integer. page)) ;; make it 1-based indexing
         prev (* page-num posts-per-page)]
     (ids->posts (take posts-per-page (drop prev (db/get :post-ids))))))
 
+(defn get-latest-mongo []
+  (get-page-mongo 1))
+
 (defn get-latest []
   (get-page 1))
 
 ;; Mutations and checks
+(defn next-id-mongo []
+  (str (inc total-mongo)))
 
 (defn next-id []
   (str (db/update! :next-post-id inc)))
@@ -46,6 +71,9 @@
     (string/lower-case)
     (string/replace #"[^a-zA-Z0-9\s]" "")
     (string/replace #" " "-")))
+
+(defn new-moniker?-mongo [moniker]
+  (not (moniker->post-mongo)))
 
 (defn new-moniker? [moniker]
   (not (contains? (db/get :post-monikers) moniker)))
